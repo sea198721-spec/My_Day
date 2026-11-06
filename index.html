@@ -29,7 +29,7 @@ window.pushFamilyChanges=async()=>{if(!cloudReady||writing)return;
  const {parent,shared}=splitState();writing=true;
  try{await Promise.all([patchDocument('parentData',pk,parent),patchDocument('zlataPlans',sk,shared)]);
   pk.forEach(k=>{if(JSON.stringify(state[k])===JSON.stringify(parent[k]))dirtyParent.delete(k)});sk.forEach(k=>{if(JSON.stringify(state[k])===JSON.stringify(shared[k]))dirtyShared.delete(k)});status('Изменения сохранены в облаке')
- }catch(e){status('Ошибка сохранения: '+e.message)}finally{writing=false;if(dirtyParent.size||dirtyShared.size){clearTimeout(cloudSaveTimer);cloudSaveTimer=setTimeout(()=>window.pushFamilyChanges?.(),1200)}}};
+ }catch(e){status('Ошибка сохранения: '+e.message);return}finally{writing=false;}};
 window.familySignIn=async()=>{const email=document.getElementById('loginEmail').value.trim(),password=document.getElementById('loginPassword').value;document.getElementById('loginStatus').textContent='Проверяем вход…';try{await signInWithEmailAndPassword(auth,email,password)}catch(e){document.getElementById('loginStatus').textContent='Ошибка входа: '+e.message}};
 window.familySignOut=()=>signOut(auth);
 onAuthStateChanged(auth,user=>{
@@ -54,6 +54,16 @@ function isParent(){return currentRole==='parent'}
 const key=x=>iso+':'+x;
 function save(){
  if(!cloudReady)return;
+  // Compare each top-level state key with the last Firestore snapshot.
+  // Without marking dirty keys, pushFamilyChanges has nothing to upload.
+  const keys=new Set([...Object.keys(state),...Object.keys(cloudParent),...Object.keys(cloudShared)]);
+  for(const k of keys){
+    if(k.startsWith('notified:')||k==='pin')continue;
+    const parent=parentKeys(k), remote=parent?cloudParent:cloudShared;
+    const dirty=parent?dirtyParent:dirtyShared;
+    if(JSON.stringify(state[k])!==JSON.stringify(remote[k]))dirty.add(k);
+    else dirty.delete(k);
+  }
  localStorage.setItem('myday_firebase_cache',JSON.stringify(state));
  clearTimeout(cloudSaveTimer);
  cloudSaveTimer=setTimeout(()=>window.pushFamilyChanges?.(),450);
