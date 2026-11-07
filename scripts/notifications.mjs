@@ -135,3 +135,10 @@ console.log(
   get("hour"),
   get("minute")
 );
+
+await notifyOnce(
+  "test-mom-20261107-1",
+  "Мой день — проверка",
+  "Кэт, тестовое уведомление работает!"
+);
+
