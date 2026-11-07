@@ -1,6 +1,7 @@
 
 import { initializeApp, cert } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { createHash } from "node:crypto";
 
 const credentials = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
@@ -99,6 +100,7 @@ async function notifyOnce(id, title, message) {
   }
 }
 
+// Макс: проверка в 16:50
 if (["Mon", "Wed", "Fri"].includes(weekday)) {
   if (minutes >= 16 * 60 + 50 && minutes < 17 * 60 + 10) {
     if (!state[`${date}:pickupMax`]) {
@@ -111,6 +113,7 @@ if (["Mon", "Wed", "Fri"].includes(weekday)) {
   }
 }
 
+// Подготовка на завтра: проверка в 22:00
 if (["Sun", "Mon", "Tue", "Wed", "Thu"].includes(weekday)) {
   if (minutes >= 22 * 60 && minutes < 22 * 60 + 20) {
     const incomplete = Array.from(
@@ -128,6 +131,52 @@ if (["Sun", "Mon", "Tue", "Wed", "Thu"].includes(weekday)) {
   }
 }
 
+// Уведомления о выполненных домашних заданиях
+const homeworkEvents = state.homeworkNotifications;
+
+if (
+  homeworkEvents &&
+  typeof homeworkEvents === "object" &&
+  !Array.isArray(homeworkEvents)
+) {
+  const now = Date.now();
+
+  for (const [eventId, event] of Object.entries(homeworkEvents)) {
+    if (!event || typeof event !== "object") continue;
+
+    const timestamp = Date.parse(event.completedAt);
+
+    if (
+      !Number.isFinite(timestamp) ||
+      timestamp > now + 5 * 60_000 ||
+      now - timestamp > 7 * 86400_000
+    ) {
+      continue;
+    }
+
+    if (event.kind !== "school" && event.kind !== "course") {
+      continue;
+    }
+
+    const subject =
+      typeof event.subject === "string" && event.subject.trim()
+        ? event.subject.trim().slice(0, 100)
+        : event.kind === "course"
+          ? "Английский — курсы"
+          : "Школьный предмет";
+
+    const digest = createHash("sha256")
+      .update(eventId)
+      .digest("hex");
+
+    await notifyOnce(
+      `homework-${digest}`,
+      "Мой день — Злата",
+      `Злата выполнила домашнее задание: ${subject}.`
+    );
+  }
+}
+
 console.log(
   "Check completed:",
   date,
@@ -135,6 +184,3 @@ console.log(
   get("hour"),
   get("minute")
 );
-
-
-
