@@ -28,4 +28,5 @@ jobs:
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           ONESIGNAL_REST_API_KEY: ${{ secrets.ONESIGNAL_REST_API_KEY }}
-        run: node scripts/notifications.mjs
+          ONESIGNAL_MOM_SUBSCRIPTION_ID: ${{ secrets.ONESIGNAL_MOM_SUBSCRIPTION_ID }}
+     run: node scripts/notifications.mjs
