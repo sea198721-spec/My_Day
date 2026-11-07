@@ -1,12 +1,15 @@
 
-import admin from "firebase-admin";
+import { initializeApp, cert } from "firebase-admin/app";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 const credentials = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-admin.initializeApp({
-  credential: admin.credential.cert(credentials)
+
+initializeApp({
+  credential: cert(credentials)
 });
 
-const db = admin.firestore();
+const db = getFirestore();
+
 const appId = "57b7d7b9-3316-4bfb-98a6-443a620c7b3d";
 const apiKey = process.env.ONESIGNAL_REST_API_KEY;
 const momId = process.env.ONESIGNAL_MOM_SUBSCRIPTION_ID;
@@ -27,6 +30,7 @@ const parts = new Intl.DateTimeFormat("en-GB", {
 }).formatToParts(new Date());
 
 const get = type => parts.find(p => p.type === type)?.value;
+
 const date = `${get("year")}-${get("month")}-${get("day")}`;
 const weekday = get("weekday");
 const minutes = Number(get("hour")) * 60 + Number(get("minute"));
@@ -41,13 +45,17 @@ const state = {
 
 async function notifyOnce(id, title, message) {
   const ref = db.collection("notificationLog").doc(id);
+
   const claimed = await db.runTransaction(async tx => {
     const snapshot = await tx.get(ref);
+
     if (snapshot.exists) return false;
+
     tx.create(ref, {
       status: "pending",
-      createdAt: admin.firestore.FieldValue.serverTimestamp()
+      createdAt: FieldValue.serverTimestamp()
     });
+
     return true;
   });
 
@@ -77,7 +85,7 @@ async function notifyOnce(id, title, message) {
 
     await ref.update({
       status: "sent",
-      sentAt: admin.firestore.FieldValue.serverTimestamp()
+      sentAt: FieldValue.serverTimestamp()
     });
 
     console.log("Notification sent:", id);
@@ -86,11 +94,11 @@ async function notifyOnce(id, title, message) {
       status: "failed",
       error: String(error).slice(0, 500)
     });
+
     throw error;
   }
 }
 
-// Monday, Wednesday, Friday: Max pickup at 16:45.
 if (["Mon", "Wed", "Fri"].includes(weekday)) {
   if (minutes >= 16 * 60 + 50 && minutes < 17 * 60 + 10) {
     if (!state[`${date}:pickupMax`]) {
@@ -103,7 +111,6 @@ if (["Mon", "Wed", "Fri"].includes(weekday)) {
   }
 }
 
-// Sunday through Thursday: next-day preparation.
 if (["Sun", "Mon", "Tue", "Wed", "Thu"].includes(weekday)) {
   if (minutes >= 22 * 60 && minutes < 22 * 60 + 20) {
     const incomplete = Array.from(
@@ -121,4 +128,10 @@ if (["Sun", "Mon", "Tue", "Wed", "Thu"].includes(weekday)) {
   }
 }
 
-console.log("Check completed:", date, weekday, get("hour"), get("minute"));
+console.log(
+  "Check completed:",
+  date,
+  weekday,
+  get("hour"),
+  get("minute")
+);
