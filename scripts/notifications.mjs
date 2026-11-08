@@ -184,3 +184,26 @@ console.log(
   get("hour"),
   get("minute")
 );
+
+const crypto = await import("node:crypto");
+
+const homeworkEvents = state.homeworkNotifications || {};
+
+for (const [eventId, event] of Object.entries(homeworkEvents)) {
+  if (!event || !["school", "course"].includes(event.kind)) continue;
+
+  const completedAt = new Date(event.completedAt);
+  if (!Number.isFinite(completedAt.getTime())) continue;
+
+  const age = Date.now() - completedAt.getTime();
+  if (age < 0 || age > 7 * 24 * 60 * 60 * 1000) continue;
+
+  const hash = crypto.createHash("sha256").update(eventId).digest("hex");
+
+  await notifyOnce(
+    `homework-${hash}`,
+    "Мой день — Злата",
+    `Злата выполнила домашнее задание: ${event.subject || "Предмет не указан"}.`
+  );
+}
+
