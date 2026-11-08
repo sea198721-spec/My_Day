@@ -3,7 +3,9 @@ import { initializeApp, cert } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { createHash } from "node:crypto";
 
-const credentials = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+const credentials = JSON.parse(
+  process.env.FIREBASE_SERVICE_ACCOUNT
+);
 
 initializeApp({
   credential: cert(credentials)
@@ -19,6 +21,8 @@ if (!apiKey || !momId) {
   throw new Error("Missing OneSignal secrets");
 }
 
+// Текущие дата и время по Киеву
+
 const parts = new Intl.DateTimeFormat("en-GB", {
   timeZone: "Europe/Kyiv",
   year: "numeric",
@@ -30,19 +34,36 @@ const parts = new Intl.DateTimeFormat("en-GB", {
   hourCycle: "h23"
 }).formatToParts(new Date());
 
-const get = type => parts.find(p => p.type === type)?.value;
+const get = type =>
+  parts.find(p => p.type === type)?.value;
 
-const date = `${get("year")}-${get("month")}-${get("day")}`;
+const date =
+  `${get("year")}-${get("month")}-${get("day")}`;
+
 const weekday = get("weekday");
-const minutes = Number(get("hour")) * 60 + Number(get("minute"));
 
-const parentSnap = await db.collection("parentData").doc("main").get();
-const sharedSnap = await db.collection("zlataPlans").doc("main").get();
+const minutes =
+  Number(get("hour")) * 60 +
+  Number(get("minute"));
+
+// Загрузка данных из Firebase
+
+const parentSnap = await db
+  .collection("parentData")
+  .doc("main")
+  .get();
+
+const sharedSnap = await db
+  .collection("zlataPlans")
+  .doc("main")
+  .get();
 
 const state = {
   ...(parentSnap.data()?.data || {}),
   ...(sharedSnap.data()?.data || {})
 };
+
+// Отправка уведомления без повторов
 
 async function notifyOnce(id, title, message) {
   const ref = db.collection("notificationLog").doc(id);
@@ -50,7 +71,9 @@ async function notifyOnce(id, title, message) {
   const claimed = await db.runTransaction(async tx => {
     const snapshot = await tx.get(ref);
 
-    if (snapshot.exists) return false;
+    if (snapshot.exists) {
+      return false;
+    }
 
     tx.create(ref, {
       status: "pending",
@@ -60,23 +83,29 @@ async function notifyOnce(id, title, message) {
     return true;
   });
 
-  if (!claimed) return;
+  if (!claimed) {
+    console.log("Already processed:", id);
+    return;
+  }
 
   try {
-    const response = await fetch("https://api.onesignal.com/notifications", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Key ${apiKey}`
-      },
-      body: JSON.stringify({
-        app_id: appId,
-        target_channel: "push",
-        include_subscription_ids: [momId],
-        headings: { en: title },
-        contents: { en: message }
-      })
-    });
+    const response = await fetch(
+      "https://api.onesignal.com/notifications",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Key ${apiKey}`
+        },
+        body: JSON.stringify({
+          app_id: appId,
+          target_channel: "push",
+          include_subscription_ids: [momId],
+          headings: { en: title },
+          contents: { en: message }
+        })
+      }
+    );
 
     const result = await response.json();
 
@@ -90,19 +119,27 @@ async function notifyOnce(id, title, message) {
     });
 
     console.log("Notification sent:", id);
+
   } catch (error) {
     await ref.update({
       status: "failed",
       error: String(error).slice(0, 500)
     });
 
+    console.error("Notification failed:", id, error);
     throw error;
   }
 }
 
-// Макс: проверка в 16:50
+// 1. Макс — уведомление маме
+// Понедельник, среда, пятница
+// Проверка с 16:50 до 17:10
+
 if (["Mon", "Wed", "Fri"].includes(weekday)) {
-  if (minutes >= 16 * 60 + 50 && minutes < 17 * 60 + 10) {
+  if (
+    minutes >= 16 * 60 + 50 &&
+    minutes < 17 * 60 + 10
+  ) {
     if (!state[`${date}:pickupMax`]) {
       await notifyOnce(
         `${date}-mom-pickup-late`,
@@ -113,9 +150,17 @@ if (["Mon", "Wed", "Fri"].includes(weekday)) {
   }
 }
 
-// Подготовка на завтра: проверка в 22:00
-if (["Sun", "Mon", "Tue", "Wed", "Thu"].includes(weekday)) {
-  if (minutes >= 22 * 60 && minutes < 22 * 60 + 20) {
+// 2. Подготовка на завтра
+// Воскресенье — четверг
+// Проверка с 22:00 до 22:20
+
+if (
+  ["Sun", "Mon", "Tue", "Wed", "Thu"].includes(weekday)
+) {
+  if (
+    minutes >= 22 * 60 &&
+    minutes < 22 * 60 + 20
+  ) {
     const incomplete = Array.from(
       { length: 7 },
       (_, i) => !state[`${date}:evening${i}`]
@@ -131,51 +176,55 @@ if (["Sun", "Mon", "Tue", "Wed", "Thu"].includes(weekday)) {
   }
 }
 
-// Уведомления о выполненных домашних заданиях
-const homeworkEvents = state.homeworkNotifications;
+// 3. Выполненная домашняя работа
+// Уведомление маме по каждому предмету
 
-if (
-  homeworkEvents &&
-  typeof homeworkEvents === "object" &&
-  !Array.isArray(homeworkEvents)
-) {
-  const now = Date.now();
+const homeworkEvents =
+  state.homeworkNotifications || {};
 
-  for (const [eventId, event] of Object.entries(homeworkEvents)) {
-    if (!event || typeof event !== "object") continue;
-
-    const timestamp = Date.parse(event.completedAt);
-
-    if (
-      !Number.isFinite(timestamp) ||
-      timestamp > now + 5 * 60_000 ||
-      now - timestamp > 7 * 86400_000
-    ) {
-      continue;
-    }
-
-    if (event.kind !== "school" && event.kind !== "course") {
-      continue;
-    }
-
-    const subject =
-      typeof event.subject === "string" && event.subject.trim()
-        ? event.subject.trim().slice(0, 100)
-        : event.kind === "course"
-          ? "Английский — курсы"
-          : "Школьный предмет";
-
-    const digest = createHash("sha256")
-      .update(eventId)
-      .digest("hex");
-
-    await notifyOnce(
-      `homework-${digest}`,
-      "Мой день — Злата",
-      `Злата выполнила домашнее задание: ${subject}.`
-    );
+for (const [eventId, event] of Object.entries(homeworkEvents)) {
+  if (
+    !event ||
+    !["school", "course"].includes(event.kind)
+  ) {
+    continue;
   }
+
+  const completedAt = new Date(event.completedAt);
+
+  if (!Number.isFinite(completedAt.getTime())) {
+    continue;
+  }
+
+  const age = Date.now() - completedAt.getTime();
+
+  // Обрабатываем события за последние 7 дней
+
+  if (
+    age < 0 ||
+    age > 7 * 24 * 60 * 60 * 1000
+  ) {
+    continue;
+  }
+
+  const hash = createHash("sha256")
+    .update(eventId)
+    .digest("hex");
+
+  const subject =
+    typeof event.subject === "string" &&
+    event.subject.trim()
+      ? event.subject.trim()
+      : "Предмет не указан";
+
+  await notifyOnce(
+    `homework-${hash}`,
+    "Мой день — Злата",
+    `Злата выполнила домашнее задание: ${subject}.`
+  );
 }
+
+// Завершение проверки
 
 console.log(
   "Check completed:",
@@ -184,26 +233,3 @@ console.log(
   get("hour"),
   get("minute")
 );
-
-const crypto = await import("node:crypto");
-
-const homeworkEvents = state.homeworkNotifications || {};
-
-for (const [eventId, event] of Object.entries(homeworkEvents)) {
-  if (!event || !["school", "course"].includes(event.kind)) continue;
-
-  const completedAt = new Date(event.completedAt);
-  if (!Number.isFinite(completedAt.getTime())) continue;
-
-  const age = Date.now() - completedAt.getTime();
-  if (age < 0 || age > 7 * 24 * 60 * 60 * 1000) continue;
-
-  const hash = crypto.createHash("sha256").update(eventId).digest("hex");
-
-  await notifyOnce(
-    `homework-${hash}`,
-    "Мой день — Злата",
-    `Злата выполнила домашнее задание: ${event.subject || "Предмет не указан"}.`
-  );
-}
-
