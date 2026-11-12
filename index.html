@@ -84,7 +84,7 @@ function card(title,cls,content){return `<section class="section ${cls}"><h2>${t
 function task(text,id,time=''){return `<label class="task ${state[key(id)]?'done':''}"><input type="checkbox" data-task="${esc(id)}" ${state[key(id)]?'checked':''}><span class="time">${time}</span><span>${esc(text)}</span></label>`}
 function styledTask(text,id,time,cls){return `<label class="task ${state[key(id)]?'done':''} ${cls}"><input type="checkbox" data-task="${esc(id)}" ${state[key(id)]?'checked':''}><span class="time ${cls}">${time}</span><span>${esc(text)}</span></label>`}
 function extra(group){let items=state['extra:'+group]||[];return items.map((t,i)=>task(t,group+':'+i)).join('')+`<button class="add" data-add="${group}">+ Добавить пункт</button>`}
-function activities(d){return [1,3,5].includes(d)?[['15:00–16:00','Кикбоксинг'],['17:30–19:00','Волейбол']]:[2,4].includes(d)?[['13:30','Акробатика'],['17:10','Английский (курсы)']]:[]}
+function activities(d){return [1,3,5].includes(d)?[['15:00–16:00','Кикбоксинг'],...(d===5?[]:[['18:30–19:30','Английский']])]:[2,4].includes(d)?[['13:30–14:30','Акробатика'],['16:30–18:30','Волейбол']]:[]}
 function nextLesson(assigned,subject){for(let n=1;n<=8;n++){let d=plusDays(assigned,n),w=d.getDay();if(w>=1&&w<=5&&subjects[w-1].includes(subject))return d}return plusDays(assigned,7)}
 function plannedDate(assigned,subject){const next=nextLesson(assigned,subject);const p=plusDays(next,-1);return p.getDay()===0?plusDays(p,-1):p}
 function allHomework(){return Object.entries(state.assignments).filter(([,a])=>a&&a.text).map(([id,a])=>{let assigned=new Date(a.date+'T12:00:00');return {...a,id,planned:state.moves[id]||dateKey(plannedDate(assigned,a.subject)),next:dateKey(nextLesson(assigned,a.subject))}})}
@@ -96,37 +96,41 @@ function weeklyHomeworkCards(){
  let html=overdue.length?`<div class="day"><strong>Невыполненное с прошлых недель</strong>${overdue.map(homeworkItem).join('')}</div>`:'';
  for(let i=0;i<7;i++){
   const date=plusDays(start,i),k=dateKey(date),group=items.filter(a=>a.planned===k).sort((a,b)=>a.subject.localeCompare(b.subject,'ru'));
-  html+=`<div class="day"><strong>${days[date.getDay()]} · ${date.toLocaleDateString('ru-RU',{day:'numeric',month:'long'})}</strong>${(group.length?group.map(homeworkItem).join(''):'<p class="notice">Заданий пока нет</p>')+((i===2||i===6)?courseItem(k):'')}</div>`;
+  html+=`<div class="day"><strong>${days[date.getDay()]} · ${date.toLocaleDateString('ru-RU',{day:'numeric',month:'long'})}</strong>${(group.length?group.map(homeworkItem).join(''):'<p class="notice">Заданий пока нет</p>')+((i===1||i===6)?courseItem(k):'')}</div>`;
  }
  return html;
 }
-function courseItem(date){const val=state.course[date]||'';const done=!!state['courseDone:'+date];return `<div class="hw-task"><label><input type="checkbox" data-course-done="${date}" ${done?'checked':''}><div><strong>Английский — курсы</strong><p>${esc(val)||'<span class="muted">Задание ещё не записано</span>'}</p>${isParent()?`<button class="mini" data-course-edit="${date}">✎ Записать домашку</button>`:''}</div></label></div>`}
+function courseItem(date){const val=state.course[date]||'';const done=!!state['courseDone:'+date];return `<div class="hw-task"><label><input type="checkbox" data-course-done="${date}" ${done?'checked':''}><div><strong>Английский курсы</strong><p>${esc(val)||'<span class="muted">Задание ещё не записано</span>'}</p>${isParent()?`<button class="mini" data-course-edit="${date}">✎ Записать домашку</button>`:''}</div></label></div>`}
 function homeworkItem(a){const done=!!state['done:'+a.id];return `<div class="hw-task"><label><input type="checkbox" data-hw-done="${esc(a.id)}" ${done?'checked':''}><div><strong>${esc(a.subject)}</strong>${done?' <span class="caption">✓ Выполнено</span>':''}<p>${esc(a.text)}</p><span class="caption">Следующий урок: ${new Date(a.next+'T12:00:00').toLocaleDateString('ru-RU',{day:'numeric',month:'long'})}</span>${new Date(a.planned+'T12:00:00').getDay()===6&&!done?`<div class="tools"><button class="mini" data-move="${esc(a.id)}">На воскресенье →</button></div>`:''}</div></label></div>`}
 function lessonRows(w,date,editable){return subjects[w-1].map((subject,i)=>{let id=dateKey(date)+'-'+i,record=state.assignments[id],planned=plannedDate(date,subject);return `<div class="lesson"><div class="lesson-head"><span class="time">${times[i]}</span><span class="lesson-name">${esc(subject)}</span></div>${record?.text&&editable?`<div class="hw-entry">📝 ${esc(record.text)}</div><div class="hw-date">В «Домашке»: ${planned.toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long'})}</div>`:''}${editable?`<button class="mini" data-edit-hw="${esc(id)}" data-subject="${esc(subject)}" data-date="${dateKey(date)}">${record?.text?'Изменить домашку':'+ Домашка'}</button>${record?.text&&isParent()?`<button class="mini danger" data-delete-hw="${esc(id)}">Удалить домашку</button>`:''}`:''}</div>`}).join('')}
-function homeworkCards(){const items=homeworkFor(iso);return items.length?items.map(a=>`<div class="hw-task"><label><input type="checkbox" data-hw-done="${esc(a.id)}"><div><strong>${esc(a.subject)}</strong><p>${esc(a.text)}</p><span class="caption">${a.planned<iso?'Не выполнено ранее · ':''}Следующий урок: ${new Date(a.next+'T12:00:00').toLocaleDateString('ru-RU',{day:'numeric',month:'long'})}</span></div></label></div>`).join(''):'<p class="notice">На сегодня записанных домашних заданий нет.</p>'}
+function homeworkCards(){const items=homeworkFor(iso);const courseToday=(day===0||day===2)?courseItem(iso):'';return (items.length?items.map(a=>`<div class="hw-task"><label><input type="checkbox" data-hw-done="${esc(a.id)}"><div><strong>${esc(a.subject)}</strong><p>${esc(a.text)}</p><span class="caption">${a.planned<iso?'Не выполнено ранее · ':''}Следующий урок: ${new Date(a.next+'T12:00:00').toLocaleDateString('ru-RU',{day:'numeric',month:'long'})}</span></div></label></div>`).join(''):(courseToday?'':'<p class="notice">На сегодня записанных домашних заданий нет.</p>'))+courseToday}
 function render(){if(!cloudReady)return;const parent=isParent();document.getElementById('date').textContent=days[day]+', '+today.toLocaleDateString('ru-RU',{day:'numeric',month:'long'});const grades=state[key('grades')]||[];const blocked=grades.some(g=>g<=3),minutes=Math.max(0,60+grades.reduce((a,g)=>a+(g>=10?30:g>=4&&g<=7?-30:0),0));document.getElementById('limit').textContent=blocked?'Блок до конца дня':minutes>=60?Math.floor(minutes/60)+' ч'+(minutes%60?' '+minutes%60+' мин':''):minutes+' мин';let blocks=[];
 if(day>=1&&day<=5){
  blocks.push(card('☀️ Утро','yellow',['Проснуться','Позавтракать','Умыться и собраться'].map((t,i)=>task(t,'morning'+i,i===0?'07:30':'')).join('')+task('Выйти в школу','leave','08:10')));
  let bring=['Ключи','Телефон','Школьный рюкзак','Бустер'];
- if(day===2||day===4)bring.push('Вещи на акробатику','Сменная обувь на английский');
+ if(day===2||day===4)bring.push('Вещи на акробатику','Форма на волейбол');
  blocks.push(card('🎒 Взять с собой · 08:00','blue',bring.map((t,i)=>task(t,'bring'+i)).join('')+extra('bring'+day)));
  blocks.push(card('📚 Школа','blue',lessonRows(day,today,parent)+`<p class="notice">Напоминания от мамы</p>`+extra('school'+day)));
  // After school, every event is a separate card and is sorted by its start time.
  const events=[];
  if(day===1||day===3||day===5){
-  events.push({at:'13:30',html:card('💗 Личное время · 13:30–14:30','personal-card','<p class="notice">Время для себя</p>')});
-  events.push({at:'14:30',html:card('🏠 Дома · обед и сборы','peach',task('Пообедать дома','lunch')+task('Собрать вещи на кикбоксинг и волейбол','trainingBag')+'<div class="reminder-note">После школы вернуться домой</div>')});
+  events.push({at:'13:30',html:card('💗 Личное время · 13:30–15:00','personal-card','<p class="notice">Время для себя</p>')});
+  events.push({at:'14:30',html:card('🏠 Обед и сборы','peach',task('Пообедать дома','lunch')+task('Собрать вещи на кикбоксинг','trainingBag'))});
  }else if(day===2||day===4){
-  events.push({at:'14:30',html:card('💗 Личное время · 14:30–16:40','personal-card','<p class="notice">Обед — в школе</p>')});
-  events.push({at:'16:30',html:card('🎒 Подготовка к английскому · 16:30','peach',task('Подготовить всё на английский','englishPrep')+task('Взять сменную обувь','englishShoes'))});
+  events.push({at:'14:30',html:card('💗 Личное время · 14:30–16:30','personal-card','<p class="notice">Обед — в школе</p>')});
  }
  for(const [i,[time,name]] of activities(day).entries()){
   events.push({at:time.slice(0,5),html:card('🏅 '+esc(name)+' · '+esc(time),'activity-card',styledTask('Отметить занятие выполненным','activity'+i,'','activity-green'))});
  }
- events.push({at:'16:45',html:card('16:45 · Забрать Макса','pickup-card',task('Забрать Макса и привезти к маме на работу','pickupMax')+'<div class="reminder-note">Напоминание в 16:35</div>')});
+ if([1,3,5].includes(day)){
+  events.push({at:'16:45',html:card('16:45 · Забрать Макса','pickup-card',task('Забрать Макса','pickupMax')+'<div class="reminder-note">Напоминание в 16:35</div>')});
+  events.push({at:'16:46',html:card('🌿 Прогулка с Максом · 16:45–'+(day===5?'19:00':'18:30'),'mint',task('Гулять с Максом и ждать маму','walk'))});
+ }else{
+  events.push({at:'18:30',html:card('🌿 Прогулка · 18:30–19:00','mint',task('Прогулка','walk'))});
+ }
  events.sort((a,b)=>a.at.localeCompare(b.at));
  blocks.push(...events.map(e=>e.html));
- blocks.push(card('🌙 Вечер','lav',task('Прогулка','walk','18:00')+task('Ужин','dinner','19:00')+task('Домашние задания','hw','19:30')+task('Порядок в комнате','roomOrder')+task('Вечерняя гигиена','hygiene')+task('Свободное время','free')+task('Отбой','sleep','22:20')));
+ blocks.push(card('🌙 Вечер','lav',task('Ужин','dinner','19:00')+task('Домашние задания','hw','19:30')+task('Порядок в комнате','roomOrder')+task('Вечерняя гигиена','hygiene')+task('Свободное время','free')+task('Отбой','sleep','22:20')));
 }else{
  blocks.push(card('🌿 Выходной','mint','<p class="notice">Свободное время. Домашка и подготовка к понедельнику — по плану.</p>'));
  if(day===6)blocks.push(card('🧹 Суббота · уборка','yellow',task('Уборка в комнате','roomCleaning')));
@@ -159,7 +163,7 @@ document.addEventListener('change',e=>{
   if(e.target.matches('[data-course-done]')){
     const id=e.target.dataset.courseDone,wasDone=!!state['courseDone:'+id];
     state['courseDone:'+id]=e.target.checked;
-    if(e.target.checked&&!wasDone)recordHomeworkCompletion('course',id,'Английский — курсы');
+    if(e.target.checked&&!wasDone)recordHomeworkCompletion('course',id,'Английский курсы');
     save();render();
   }
 });
@@ -169,11 +173,11 @@ document.addEventListener('click',e=>{const weekButton=e.target.closest('[data-w
   try{window.oneSignalInstance.Notifications.requestPermission().then(()=>alert('Разрешение на уведомления: '+Notification.permission)).catch(err=>alert('Ошибка OneSignal: '+err.message))}catch(err){alert('Ошибка OneSignal: '+err.message)}
   return} 
 if(e.target.id==='testNotification'){if('Notification'in window&&Notification.permission==='granted'){navigator.serviceWorker?.ready.then(r=>r.showNotification('Мой день',{body:'Проверка уведомлений'})).catch(()=>new Notification('Мой день',{body:'Проверка'}))}else alert('Сначала разреши уведомления');return}
-let course=e.target.closest('[data-course-edit]');if(course){if(!isParent())return;const k=course.dataset.courseEdit;let v=prompt('Английский — курсы. Домашка:',state.course[k]||'');if(v!==null){state.course[k]=v.trim();save();render()}return}
+let course=e.target.closest('[data-course-edit]');if(course){if(!isParent())return;const k=course.dataset.courseEdit;let v=prompt('Английский курсы. Домашка:',state.course[k]||'');if(v!==null){state.course[k]=v.trim();save();render()}return}
 let move=e.target.closest('[data-move]');if(move){let id=move.dataset.move,a=allHomework().find(x=>x.id===id);if(a){state.moves[id]=dateKey(plusDays(new Date(a.planned+'T12:00:00'),1));save();render()}return}
 let rem=e.target.closest('[data-remove-grade]');if(rem&&isParent()){state[key('grades')].splice(Number(rem.dataset.removeGrade),1);save();render();return}
 let tab=e.target.closest('[data-page]');if(tab){activePage=tab.dataset.page;document.querySelectorAll('.page').forEach(x=>x.classList.add('hidden'));document.getElementById(tab.dataset.page).classList.remove('hidden');document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('active',x===tab))}});
-const reminderTimes=[['08:00','Взять с собой'],['14:30','Пообедать дома и собрать вещи на тренировки'],['16:30','Подготовить всё на английский и взять сменную обувь'],['16:35','В 16:45 забрать Макса и привезти к маме на работу'],['21:00','Подготовка на завтра'],['21:30','Повтор: подготовь вещи на завтра']];
-function checkReminders(){const now=new Date(),d=now.getDay(),hm=now.toTimeString().slice(0,5),stamp=dateKey(now)+':'+hm;for(const [time,title] of reminderTimes){if(time!==hm)continue;if(time==='14:30'&&![1,3,5].includes(d))continue;if(time==='16:30'&&![2,4].includes(d))continue;if(time==='16:35'&&![1,2,3,4,5].includes(d))continue;if((time==='21:00'||time==='21:30')&&![0,1,2,3,4].includes(d))continue;if(time==='08:00'&&(d===0||d===6))continue;if(!cloudReady||state['notified:'+stamp])continue;state['notified:'+stamp]=true;if('Notification' in window&&Notification.permission==='granted'){navigator.serviceWorker?.ready.then(r=>r.showNotification('Мой день',{body:title})).catch(()=>{})}}}
+const reminderTimes=[['08:00','Взять с собой'],['14:30','Пообедать дома и собрать вещи на кикбоксинг'],['16:35','В 16:45 забрать Макса'],['21:00','Подготовка на завтра'],['21:30','Повтор: подготовь вещи на завтра']];
+function checkReminders(){const now=new Date(),d=now.getDay(),hm=now.toTimeString().slice(0,5),stamp=dateKey(now)+':'+hm;for(const [time,title] of reminderTimes){if(time!==hm)continue;if(time==='14:30'&&![1,3,5].includes(d))continue;if(time==='16:35'&&![1,3,5].includes(d))continue;if((time==='21:00'||time==='21:30')&&![0,1,2,3,4].includes(d))continue;if(time==='08:00'&&(d===0||d===6))continue;if(!cloudReady||state['notified:'+stamp])continue;state['notified:'+stamp]=true;if('Notification' in window&&Notification.permission==='granted'){navigator.serviceWorker?.ready.then(r=>r.showNotification('Мой день',{body:title})).catch(()=>{})}}}
 setInterval(checkReminders,30000);checkReminders();
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').catch(()=>{})}</script></body></html>
